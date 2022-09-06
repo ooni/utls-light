@@ -296,7 +296,7 @@ func (m *clientHelloMsg) marshal() []byte {
 		}
 	})
 
-	m.raw = b.BytesOrPanic()
+	m.raw = transformClientHello(b.BytesOrPanic())
 	return m.raw
 }
 
