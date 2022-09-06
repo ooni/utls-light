@@ -1,8 +1,6 @@
 package tls
 
 import (
-	"fmt"
-
 	"golang.org/x/crypto/cryptobyte"
 )
 
@@ -96,6 +94,7 @@ func transformClientHello(mRaw []byte) []byte {
 	var sniExtensionData []byte
 	var sessionTicketData []byte
 	var alpnData []byte
+	var keyShares []keyShare
 	for !extensions.Empty() {
 		var extension uint16
 		var extData cryptobyte.String
@@ -110,7 +109,21 @@ func transformClientHello(mRaw []byte) []byte {
 			sessionTicketData = []byte(extData)
 		} else if extension == extensionALPN {
 			alpnData = []byte(extData)
-			fmt.Printf("Found alpn %v %v", extData, alpnData)
+		} else if extension == extensionKeyShare {
+			var clientShares cryptobyte.String
+			if !extData.ReadUint16LengthPrefixed(&clientShares) {
+				panic("failed to read keyshare information")
+			}
+			for !clientShares.Empty() {
+				var ks keyShare
+				if !clientShares.ReadUint16((*uint16)(&ks.group)) ||
+					!readUint16LengthPrefixed(&clientShares, &ks.data) ||
+					len(ks.data) == 0 {
+					panic("failed to load keyshare information")
+				}
+				keyShares = append(keyShares, ks)
+			}
+
 		}
 	}
 
@@ -172,27 +185,12 @@ func transformClientHello(mRaw []byte) []byte {
 				b.AddBytes(sessionTicketData)
 			})
 
-			/*
-				if len(alpnData) > 0 {
-					b.AddUint16(extensionALPN)
-					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddBytes(alpnData)
-					})
-				}
-			*/
-			// Let's force ALPN for the moment
-			b.AddUint16(extensionALPN)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			if len(alpnData) > 0 {
+				b.AddUint16(extensionALPN)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddBytes([]byte("h2"))
-					})
-					b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddBytes([]byte("http/1.1"))
-					})
-
+					b.AddBytes(alpnData)
 				})
-			})
+			}
 
 			b.AddUint16(extensionStatusRequest)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
@@ -216,12 +214,17 @@ func transformClientHello(mRaw []byte) []byte {
 			b.AddUint16(extensionKeyShare)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					// TODO: parse and populate non-grease keyshares
 					b.AddUint16(GREASE_MAGIC)
 					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 						b.AddUint16(1)
 						b.AddUint8(0)
 					})
+					for _, ks := range keyShares {
+						b.AddUint16(uint16(ks.group))
+						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+							b.AddBytes(ks.data)
+						})
+					}
 				})
 			})
 
