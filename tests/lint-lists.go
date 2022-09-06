@@ -48,7 +48,7 @@ func testURL(serverName string) error {
 		return errors.New("failed to lookup IP")
 	}
 	addr := fmt.Sprintf("%s:443", ips[0].String())
-	config := tls.Config{ServerName: serverName}
+	config := tls.Config{ServerName: serverName, NextProtos: []string{"h2", "http/1.1"}}
 	dialConn, err := net.DialTimeout("tcp", addr, time.Duration(2)*time.Second)
 	if err != nil {
 		logStatus("FAIL-CONNECT", serverName, addr)
