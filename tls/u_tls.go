@@ -354,11 +354,21 @@ func transformClientHello(mRaw []byte) []byte {
 			b.AddUint16(extensionKeyShare)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint16(BoringGrease(random, ssl_grease_group))
-					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddUint16(1)
-						b.AddUint8(0)
-					})
+					// GREASE support is temporarily
+					// disabled from the key_share
+					// extensions, because when handling a
+					// HelloRetryRequest we need to remove
+					// the greese, but since we don't have
+					// access to the state in this point
+					// there is no easy way to determine
+					// that.
+					/*
+						b.AddUint16(BoringGrease(random, ssl_grease_group))
+						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+							b.AddUint16(1)
+							b.AddUint8(0)
+						})
+					*/
 					for _, ks := range keyShares {
 						b.AddUint16(uint16(ks.group))
 						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
@@ -374,6 +384,8 @@ func transformClientHello(mRaw []byte) []byte {
 					b.AddUint8(1) // psk_dhe_ke
 				})
 			})
+
+			// TODO add support for cookie
 
 			b.AddUint16(extensionSupportedVersions)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
