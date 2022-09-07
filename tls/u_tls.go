@@ -251,14 +251,18 @@ func transformClientHello(mRaw []byte) []byte {
 				})
 			})
 
-			b.AddUint16(extensionApplicationSetting)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			// This is disabled, because we don't support it.
+			/*
+
+				b.AddUint16(extensionApplicationSetting)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddBytes([]byte("h2"))
+					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+						b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+							b.AddBytes([]byte("h2"))
+						})
 					})
 				})
-			})
+			*/
 
 			b.AddUint16(extensionGreaseLast)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
