@@ -11,21 +11,45 @@ import (
 	"os"
 	"time"
 
+	"golang.org/x/net/http2"
+
 	tls "github.com/hellais/utls-light/tls"
 )
 
 func getRequest(conn net.Conn, requestHostname string, alpn string) (*http.Response, error) {
 	req := &http.Request{
 		Method: "GET",
-		URL:    &url.URL{Host: requestHostname},
+		URL:    &url.URL{Host: requestHostname, Scheme: "https"},
 		Header: make(http.Header),
 		Host:   requestHostname,
 	}
-	err := req.Write(conn)
-	if err != nil {
-		return nil, err
+
+	fmt.Printf("Using alpn %s\n", alpn)
+	switch alpn {
+	case "h2":
+		req.Proto = "HTTP/2.0"
+		req.ProtoMajor = 2
+		req.ProtoMinor = 0
+
+		tr := http2.Transport{}
+		cConn, err := tr.NewClientConn(conn)
+		if err != nil {
+			return nil, err
+		}
+		return cConn.RoundTrip(req)
+	case "http/1.1", "":
+		req.Proto = "HTTP/1.1"
+		req.ProtoMajor = 1
+		req.ProtoMinor = 1
+
+		err := req.Write(conn)
+		if err != nil {
+			return nil, err
+		}
+		return http.ReadResponse(bufio.NewReader(conn), req)
+	default:
+		return nil, fmt.Errorf("unsupported ALPN: %v", alpn)
 	}
-	return http.ReadResponse(bufio.NewReader(conn), req)
 }
 
 func logStatus(status string, serverName string, addr string) {
@@ -55,6 +79,7 @@ func testURL(serverName string) error {
 		return err
 	}
 	tlsConn := tls.Client(dialConn, &config)
+	tlsConn.Handshake()
 	defer tlsConn.Close()
 	_, err = getRequest(tlsConn, serverName, tlsConn.ConnectionState().NegotiatedProtocol)
 	if err != nil {
