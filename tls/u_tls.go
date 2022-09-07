@@ -11,15 +11,10 @@ import (
 	"golang.org/x/crypto/cryptobyte"
 )
 
-const CIPHER_SUITE_GREASE uint16 = 0x0a0a
-const GREASE_MAGIC uint16 = 0x7a7a
-
 const (
 	extensionPadding             uint16 = 21
 	extensionEMS                 uint16 = 23
 	extensionCompressCertificate uint16 = 27
-	extensionGrease              uint16 = 0x5a5a
-	extensionGreaseLast          uint16 = 0x3a3a
 	extensionApplicationSetting  uint16 = 0x4469
 )
 
@@ -159,36 +154,23 @@ func BoringPaddingStyle(unpaddedLen int) int {
 	return 0
 }
 
-func transformClientHello(mRaw []byte) []byte {
-	CIPHER_SUITES_UTLS_LITE := []uint16{
-		CIPHER_SUITE_GREASE,
-		TLS_AES_128_GCM_SHA256,
-		TLS_AES_256_GCM_SHA384,
-		TLS_CHACHA20_POLY1305_SHA256,
-		TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-		TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-		TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-		TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-		TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-		TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-		TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-		TLS_RSA_WITH_AES_128_GCM_SHA256,
-		TLS_RSA_WITH_AES_256_GCM_SHA384,
-		TLS_RSA_WITH_AES_128_CBC_SHA,
-		TLS_RSA_WITH_AES_256_CBC_SHA,
-	}
-	SIGNATURE_ALGORITHMS_UTLS_LITE := []uint16{
-		uint16(ECDSAWithP256AndSHA256),
-		uint16(PSSWithSHA256),
-		uint16(PKCS1WithSHA256),
-		uint16(ECDSAWithP384AndSHA384),
-		uint16(PSSWithSHA384),
-		uint16(PKCS1WithSHA384),
-		uint16(PSSWithSHA512),
-		uint16(PKCS1WithSHA512),
-	}
+const (
+	ssl_grease_cipher = iota
+	ssl_grease_group
+	ssl_grease_extension1
+	ssl_grease_extension2
+	ssl_grease_version
+)
 
+func BoringGrease(clientRandom []byte, index int) uint16 {
+	var ret uint16
+	ret = uint16(clientRandom[index])
+	ret = (ret & 0xf0) | 0x0a
+	ret |= ret << 8
+	return ret
+}
+
+func transformClientHello(mRaw []byte) []byte {
 	vers := uint16(0)
 	random := make([]byte, 32)
 	sessionId := make([]byte, 32)
@@ -259,6 +241,34 @@ func transformClientHello(mRaw []byte) []byte {
 
 	// Pack all the goodies we extracted from the original ClientHello and
 	// pack them up into a fresh new ClientHello byte array
+	CIPHER_SUITES_UTLS_LITE := []uint16{
+		BoringGrease(random, ssl_grease_cipher),
+		TLS_AES_128_GCM_SHA256,
+		TLS_AES_256_GCM_SHA384,
+		TLS_CHACHA20_POLY1305_SHA256,
+		TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+		TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+		TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		TLS_RSA_WITH_AES_128_GCM_SHA256,
+		TLS_RSA_WITH_AES_256_GCM_SHA384,
+		TLS_RSA_WITH_AES_128_CBC_SHA,
+		TLS_RSA_WITH_AES_256_CBC_SHA,
+	}
+	SIGNATURE_ALGORITHMS_UTLS_LITE := []uint16{
+		uint16(ECDSAWithP256AndSHA256),
+		uint16(PSSWithSHA256),
+		uint16(PKCS1WithSHA256),
+		uint16(ECDSAWithP384AndSHA384),
+		uint16(PSSWithSHA384),
+		uint16(PKCS1WithSHA384),
+		uint16(PSSWithSHA512),
+		uint16(PKCS1WithSHA512),
+	}
 	var b cryptobyte.Builder
 	b.AddUint8(typeClientHello)
 	b.AddUint24LengthPrefixed(func(header *cryptobyte.Builder) {
@@ -277,7 +287,7 @@ func transformClientHello(mRaw []byte) []byte {
 		})
 
 		header.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddUint16(extensionGrease)
+			b.AddUint16(BoringGrease(random, ssl_grease_extension1))
 			b.AddUint16(0x0000)
 
 			b.AddUint16(extensionServerName)
@@ -296,7 +306,7 @@ func transformClientHello(mRaw []byte) []byte {
 			b.AddUint16(extensionSupportedCurves)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint16(uint16(GREASE_MAGIC))
+					b.AddUint16(uint16(BoringGrease(random, ssl_grease_group)))
 					b.AddUint16(uint16(X25519))
 					b.AddUint16(uint16(CurveP256))
 					b.AddUint16(uint16(CurveP384))
@@ -344,7 +354,7 @@ func transformClientHello(mRaw []byte) []byte {
 			b.AddUint16(extensionKeyShare)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint16(GREASE_MAGIC)
+					b.AddUint16(BoringGrease(random, ssl_grease_group))
 					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 						b.AddUint16(1)
 						b.AddUint8(0)
@@ -368,7 +378,7 @@ func transformClientHello(mRaw []byte) []byte {
 			b.AddUint16(extensionSupportedVersions)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint16(0xaaaa) // GREASE
+					b.AddUint16(BoringGrease(random, ssl_grease_version))
 					b.AddUint16(VersionTLS13)
 					b.AddUint16(VersionTLS12)
 				})
@@ -381,7 +391,7 @@ func transformClientHello(mRaw []byte) []byte {
 				})
 			})
 
-			// This is disabled, because we don't support it.
+			// This is disabled, because we don't support it, but nor does utls proper
 			/*
 
 				b.AddUint16(extensionApplicationSetting)
@@ -394,7 +404,7 @@ func transformClientHello(mRaw []byte) []byte {
 				})
 			*/
 
-			b.AddUint16(extensionGreaseLast)
+			b.AddUint16(BoringGrease(random, ssl_grease_extension2))
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				b.AddUint8(0)
 			})
