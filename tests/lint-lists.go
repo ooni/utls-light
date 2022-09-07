@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,7 +25,6 @@ func getRequest(conn net.Conn, requestHostname string, alpn string) (*http.Respo
 		Host:   requestHostname,
 	}
 
-	fmt.Printf("Using alpn %s\n", alpn)
 	switch alpn {
 	case "h2":
 		req.Proto = "HTTP/2.0"
@@ -97,9 +97,18 @@ func main() {
 	}
 	defer file.Close()
 
+	testDomains := []string{}
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		domain := scanner.Text()
+		testDomains = append(testDomains, domain)
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(testDomains), func(i, j int) { testDomains[i], testDomains[j] = testDomains[j], testDomains[i] })
+
+	for idx := range testDomains {
+		domain := testDomains[idx]
 		err := testURL(domain)
 		if err != nil {
 			log.Printf("Failed to check %s %v", domain, err)
