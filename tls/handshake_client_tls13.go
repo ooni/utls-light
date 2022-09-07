@@ -463,6 +463,7 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 		c.sendAlert(alertDecodeError)
 		return errors.New("tls: received empty certificates message")
 	}
+
 	// <UTLS-LIGHT>
 	if !receivedCompressedCert {
 		hs.transcript.Write(certMsg.marshal())

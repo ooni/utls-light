@@ -296,7 +296,10 @@ func (m *clientHelloMsg) marshal() []byte {
 		}
 	})
 
+	// <UTLS-LIGHT>
 	m.raw = transformClientHello(b.BytesOrPanic())
+	// </UTLS-LIGHT>
+
 	return m.raw
 }
 
@@ -614,6 +617,7 @@ type serverHelloMsg struct {
 	// <UTLS-LIGHT>
 	ems bool
 	// </UTLS-LIGHT>
+
 }
 
 func (m *serverHelloMsg) marshal() []byte {
@@ -829,10 +833,12 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 				len(m.supportedPoints) == 0 {
 				return false
 			}
+
 		// <UTLS-LIGHT>
 		case extensionEMS:
 			m.ems = true
 		// </UTLS-LIGHT>
+
 		default:
 			// Ignore unknown extensions.
 			continue
