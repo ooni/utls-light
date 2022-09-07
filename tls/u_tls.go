@@ -15,9 +15,9 @@ const CIPHER_SUITE_GREASE uint16 = 0x0a0a
 const GREASE_MAGIC uint16 = 0x7a7a
 
 const (
-	extensionPadding             uint16 = 0x0015
-	extensionEMS                 uint16 = 0x0017
-	extensionCompressCertificate uint16 = 0x001b
+	extensionPadding             uint16 = 21
+	extensionEMS                 uint16 = 23
+	extensionCompressCertificate uint16 = 27
 	extensionGrease              uint16 = 0x5a5a
 	extensionGreaseLast          uint16 = 0x3a3a
 	extensionApplicationSetting  uint16 = 0x4469
@@ -132,6 +132,18 @@ func (m *compressedCertificateMsg) unmarshal(data []byte) bool {
 		return false
 	}
 	return true
+}
+
+// Taken from refraction-networking/utls
+var extendedMasterSecretLabel = []byte("extended master secret")
+
+// extendedMasterFromPreMasterSecret generates the master secret from the pre-master
+// secret and session hash. See https://tools.ietf.org/html/rfc7627#section-4
+func extendedMasterFromPreMasterSecret(version uint16, suite *cipherSuite, preMasterSecret []byte, fh finishedHash) []byte {
+	sessionHash := fh.Sum()
+	masterSecret := make([]byte, masterSecretLength)
+	prfForVersion(version, suite)(masterSecret, preMasterSecret, extendedMasterSecretLabel, sessionHash)
+	return masterSecret
 }
 
 func BoringPaddingStyle(unpaddedLen int) int {

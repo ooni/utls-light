@@ -610,6 +610,10 @@ type serverHelloMsg struct {
 	// HelloRetryRequest extensions
 	cookie        []byte
 	selectedGroup CurveID
+
+	// <UTLS-LIGHT>
+	ems bool
+	// </UTLS-LIGHT>
 }
 
 func (m *serverHelloMsg) marshal() []byte {
@@ -825,6 +829,10 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 				len(m.supportedPoints) == 0 {
 				return false
 			}
+		// <UTLS-LIGHT>
+		case extensionEMS:
+			m.ems = true
+		// </UTLS-LIGHT>
 		default:
 			// Ignore unknown extensions.
 			continue
