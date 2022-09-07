@@ -1,6 +1,13 @@
 package tls
 
 import (
+	"bytes"
+	"compress/zlib"
+	"fmt"
+	"io"
+
+	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 	"golang.org/x/crypto/cryptobyte"
 )
 
@@ -15,6 +22,117 @@ const (
 	extensionGreaseLast          uint16 = 0x3a3a
 	extensionApplicationSetting  uint16 = 0x4469
 )
+
+const (
+	typeCompressedCertificate uint8 = 25
+)
+
+const (
+	certCompressionZlib   uint16 = 0x0001
+	certCompressionBrotli uint16 = 0x0002
+	certCompressionZstd   uint16 = 0x0003
+)
+
+// Taken from refraction-networking/utls
+// Only implemented client-side, for server certificates.
+// Alternate certificate message formats (https://datatracker.ietf.org/doc/html/rfc7250) are not
+// supported.
+// https://datatracker.ietf.org/doc/html/rfc8879
+type compressedCertificateMsg struct {
+	raw []byte
+
+	algorithm                    uint16
+	uncompressedLength           uint32 // uint24
+	compressedCertificateMessage []byte
+}
+
+func (m *compressedCertificateMsg) marshal() []byte {
+	if m.raw != nil {
+		return m.raw
+	}
+
+	var b cryptobyte.Builder
+	b.AddUint8(typeCompressedCertificate)
+	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddUint16(m.algorithm)
+		b.AddUint24(m.uncompressedLength)
+		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddBytes(m.compressedCertificateMessage)
+		})
+	})
+
+	m.raw = b.BytesOrPanic()
+	return m.raw
+}
+
+func (m *compressedCertificateMsg) decompressCert() (*certificateMsgTLS13, error) {
+	var (
+		decompressed io.Reader
+		compressed   = bytes.NewReader(m.compressedCertificateMessage)
+	)
+
+	// We don't check if the certificate is compressed in a way we
+	// advertised support for and we can't send in-spec error messages
+	// because we don't have acceess to the handshake state.
+	switch m.algorithm {
+	case certCompressionBrotli:
+		decompressed = brotli.NewReader(compressed)
+
+	case certCompressionZlib:
+		rc, err := zlib.NewReader(compressed)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open zlib reader: %w", err)
+		}
+		defer rc.Close()
+		decompressed = rc
+
+	case certCompressionZstd:
+		rc, err := zstd.NewReader(compressed)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open zstd reader: %w", err)
+		}
+		defer rc.Close()
+		decompressed = rc
+
+	default:
+		return nil, fmt.Errorf("unsupported algorithm (%d)", m.algorithm)
+	}
+
+	rawMsg := make([]byte, m.uncompressedLength+4) // +4 for message type and uint24 length field
+	rawMsg[0] = typeCertificate
+	rawMsg[1] = uint8(m.uncompressedLength >> 16)
+	rawMsg[2] = uint8(m.uncompressedLength >> 8)
+	rawMsg[3] = uint8(m.uncompressedLength)
+
+	n, err := decompressed.Read(rawMsg[4:])
+	if err != nil {
+		return nil, err
+	}
+	if n < len(rawMsg)-4 {
+		// If, after decompression, the specified length does not match the actual length, the party
+		// receiving the invalid message MUST abort the connection with the "bad_certificate" alert.
+		// https://datatracker.ietf.org/doc/html/rfc8879#section-4
+		return nil, fmt.Errorf("decompressed len (%d) does not match specified len (%d)", n, m.uncompressedLength)
+	}
+	certMsg := new(certificateMsgTLS13)
+	if !certMsg.unmarshal(rawMsg) {
+		return nil, alertUnexpectedMessage
+	}
+	return certMsg, nil
+}
+
+func (m *compressedCertificateMsg) unmarshal(data []byte) bool {
+	*m = compressedCertificateMsg{raw: data}
+	s := cryptobyte.String(data)
+
+	if !s.Skip(4) || // message type and uint24 length field
+		!s.ReadUint16(&m.algorithm) ||
+		!s.ReadUint24(&m.uncompressedLength) ||
+		!readUint24LengthPrefixed(&s, &m.compressedCertificateMessage) {
+		return false
+	}
+	return true
+}
 
 func BoringPaddingStyle(unpaddedLen int) int {
 	if unpaddedLen > 0xff && unpaddedLen < 0x200 {

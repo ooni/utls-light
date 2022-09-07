@@ -1079,6 +1079,8 @@ func (c *Conn) readHandshake() (any, error) {
 		m = new(endOfEarlyDataMsg)
 	case typeKeyUpdate:
 		m = new(keyUpdateMsg)
+	case typeCompressedCertificate:
+		m = new(compressedCertificateMsg)
 	default:
 		return nil, c.in.setErrorLocked(c.sendAlert(alertUnexpectedMessage))
 	}
