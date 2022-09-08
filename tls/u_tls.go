@@ -176,7 +176,7 @@ func BoringGrease(clientRandom []byte, index int) uint16 {
 	return ret
 }
 
-func transformClientHello(mRaw []byte) []byte {
+func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 	vers := uint16(0)
 	random := make([]byte, 32)
 	sessionId := make([]byte, 32)
@@ -360,21 +360,13 @@ func transformClientHello(mRaw []byte) []byte {
 			b.AddUint16(extensionKeyShare)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					// GREASE support is temporarily
-					// disabled from the key_share
-					// extensions, because when handling a
-					// HelloRetryRequest we need to remove
-					// the greese, but since we don't have
-					// access to the state in this point
-					// there is no easy way to determine
-					// that.
-					/*
+					if !noGreaseKeyshare {
 						b.AddUint16(BoringGrease(random, ssl_grease_group))
 						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 							b.AddUint16(1)
 							b.AddUint8(0)
 						})
-					*/
+					}
 					for _, ks := range keyShares {
 						b.AddUint16(uint16(ks.group))
 						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {

@@ -92,6 +92,12 @@ type clientHelloMsg struct {
 	pskModes                         []uint8
 	pskIdentities                    []pskIdentity
 	pskBinders                       [][]byte
+
+	// <UTLS-LIGHT>
+	// Used to signal the marshal function if we should disable greasing the keyshare field
+	noGreaseKeyshare bool
+	// </UTLS-LIGHT>
+
 }
 
 func (m *clientHelloMsg) marshal() []byte {
@@ -297,7 +303,7 @@ func (m *clientHelloMsg) marshal() []byte {
 	})
 
 	// <UTLS-LIGHT>
-	m.raw = transformClientHello(b.BytesOrPanic())
+	m.raw = transformClientHello(b.BytesOrPanic(), m.noGreaseKeyshare)
 	// </UTLS-LIGHT>
 
 	return m.raw

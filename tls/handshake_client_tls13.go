@@ -234,6 +234,12 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 		}
 		hs.ecdheParams = params
 		hs.hello.keyShares = []keyShare{{group: curveID, data: params.PublicKey()}}
+
+		// <UTLS-LIGHT>
+		// We use this to signal the marshaller that we don't want any GREASE in our key_shares
+		hs.hello.noGreaseKeyshare = true
+		// </UTLS-LIGHT>
+
 	}
 
 	hs.hello.raw = nil
