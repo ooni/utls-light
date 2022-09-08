@@ -167,6 +167,12 @@ func BoringGrease(clientRandom []byte, index int) uint16 {
 	ret = uint16(clientRandom[index])
 	ret = (ret & 0xf0) | 0x0a
 	ret |= ret << 8
+	// The two fake extensions must not have the same value. GREASE values are
+	// of the form 0x1a1a, 0x2a2a, 0x3a3a, etc., so XOR to generate a different
+	// one.
+	if index == ssl_grease_extension2 && ret == BoringGrease(clientRandom, ssl_grease_extension1) {
+		ret ^= 0x1010
+	}
 	return ret
 }
 
