@@ -12,3 +12,6 @@ Design goals:
 
 Non-goals:
 * Pluggable support for multiple TLS fingerprints
+
+Thanks to @FiloSottile for the insight and suggestion to take the approach of
+parsing the raw ClientHello bytes and re-serialising them.
