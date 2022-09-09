@@ -213,6 +213,7 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 	var sessionTicketData []byte
 	var alpnData []byte
 	var keyShares []keyShare
+	var cookieData []byte
 	for !extensions.Empty() {
 		var extension uint16
 		var extData cryptobyte.String
@@ -227,6 +228,8 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 			sessionTicketData = []byte(extData)
 		} else if extension == extensionALPN {
 			alpnData = []byte(extData)
+		} else if extension == extensionCookie {
+			cookieData = []byte(extData)
 		} else if extension == extensionKeyShare {
 			var clientShares cryptobyte.String
 			if !extData.ReadUint16LengthPrefixed(&clientShares) {
@@ -383,8 +386,6 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 				})
 			})
 
-			// TODO add support for cookie
-
 			b.AddUint16(extensionSupportedVersions)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
@@ -393,6 +394,14 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 					b.AddUint16(VersionTLS12)
 				})
 			})
+
+			if len(cookieData) > 0 {
+				// RFC 8446, Section 4.2.2
+				b.AddUint16(extensionCookie)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddBytes(cookieData)
+				})
+			}
 
 			b.AddUint16(extensionCompressCertificate)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
