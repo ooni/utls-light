@@ -299,10 +299,12 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 			b.AddUint16(BoringGrease(random, ssl_grease_extension1))
 			b.AddUint16(0x0000)
 
-			b.AddUint16(extensionServerName)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddBytes(sniExtensionData)
-			})
+			if len(sniExtensionData) > 0 {
+				b.AddUint16(extensionServerName)
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddBytes(sniExtensionData)
+				})
+			}
 
 			b.AddUint16(extensionEMS)
 			b.AddUint16(0x0000)
