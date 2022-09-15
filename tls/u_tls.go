@@ -368,7 +368,6 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 					if !noGreaseKeyshare {
 						b.AddUint16(BoringGrease(random, ssl_grease_group))
 						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-							b.AddUint16(1)
 							b.AddUint8(0)
 						})
 					}
