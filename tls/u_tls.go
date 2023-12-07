@@ -3,7 +3,7 @@ package tls
 import (
 	"bytes"
 	"compress/zlib"
-	"encoding/hex"
+	//"encoding/hex"
 	"fmt"
 	"io"
 
