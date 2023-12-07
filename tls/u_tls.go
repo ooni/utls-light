@@ -303,9 +303,9 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 
 			b.AddUint16(extensionStatusRequest)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddUint8(1)
-				b.AddUint16(uint16(0))
-				b.AddUint8(0)
+				b.AddUint8(1)  // status_type = ocsp
+				b.AddUint16(0) // empty responder_id_list
+				b.AddUint16(0) // empty request_extensions
 			})
 
 			b.AddUint16(extensionChromeWTF)
