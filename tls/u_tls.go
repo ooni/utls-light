@@ -17,7 +17,6 @@ const (
 	extensionCompressCertificate uint16 = 27
 	extensionApplicationSetting  uint16 = 0x4469
 	extensionChromeWTF           uint16 = 0xfe0d // Unknown type 65037
-	extensionStatusRequest       uint16 = 5
 )
 
 const (
