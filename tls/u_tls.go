@@ -402,8 +402,6 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 				})
 			})
 
-			// TODO add support for cookie
-
 			b.AddUint16(extensionSupportedVersions)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 				b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
