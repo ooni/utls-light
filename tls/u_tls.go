@@ -16,6 +16,8 @@ const (
 	extensionEMS                 uint16 = 23
 	extensionCompressCertificate uint16 = 27
 	extensionApplicationSetting  uint16 = 0x4469
+	extensionChromeWTF uint16 = 0xfe0d // Unknown type 65037
+	extensionStatusRequest uint16 = 5
 )
 
 const (
@@ -299,6 +301,18 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 			b.AddUint16(BoringGrease(random, ssl_grease_extension1))
 			b.AddUint16(0x0000)
 
+			b.AddUint16(extensionStatusRequest)
+			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+				b.AddUint8(1)
+				b.AddUint16(uint16(0))
+				b.AddUint8(0)
+			})
+
+			b.AddUint16(extensionChromeWTF)
+			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+				b.AddBytes([]byte('0000010001630020c4e7a7065a0b30728687f639a13136972e642bf192277508e88c3c2ea1a9824f00b0ddea441241f9211290af1bf57d17e327bf97842f074145b558f0f41afd8b60a0ea52fda19aaeb60a0254633577a2ca7ae68421b4c664038c31af05e7af14dadcddc53b9b0c7b9ceeb4ed8eafdcbd9657c94e0e9821c2690cf81a3d906e3b0f27ab525aaf59d94a3aac0ec9812c4b09ff8be446ef182f45ee92e37578ef60bef71e44cd10055d0310a5b51c59a8370decbcadc5095a9fc665460804f71a552a2514ba6d8ea71dccbf01de2d0e552d871b')
+			})
+
 			if len(sniExtensionData) > 0 {
 				b.AddUint16(extensionServerName)
 				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
@@ -368,6 +382,7 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 					if !noGreaseKeyshare {
 						b.AddUint16(BoringGrease(random, ssl_grease_group))
 						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+							b.AddUint16(1)
 							b.AddUint8(0)
 						})
 					}
@@ -386,6 +401,8 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 					b.AddUint8(1) // psk_dhe_ke
 				})
 			})
+
+			// TODO add support for cookie
 
 			b.AddUint16(extensionSupportedVersions)
 			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
