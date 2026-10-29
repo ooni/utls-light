@@ -41,9 +41,9 @@ type compressedCertificateMsg struct {
 	compressedCertificateMessage []byte
 }
 
-func (m *compressedCertificateMsg) marshal() []byte {
+func (m *compressedCertificateMsg) marshal() ([]byte, error) {
 	if m.raw != nil {
-		return m.raw
+		return m.raw, nil
 	}
 
 	var b cryptobyte.Builder
@@ -56,8 +56,9 @@ func (m *compressedCertificateMsg) marshal() []byte {
 		})
 	})
 
-	m.raw = b.BytesOrPanic()
-	return m.raw
+	var err error
+	m.raw, err = b.Bytes()
+	return m.raw, err
 }
 
 func (m *compressedCertificateMsg) decompressCert() (*certificateMsgTLS13, error) {
@@ -127,18 +128,6 @@ func (m *compressedCertificateMsg) unmarshal(data []byte) bool {
 		return false
 	}
 	return true
-}
-
-// Taken from refraction-networking/utls
-var extendedMasterSecretLabel = []byte("extended master secret")
-
-// extendedMasterFromPreMasterSecret generates the master secret from the pre-master
-// secret and session hash. See https://tools.ietf.org/html/rfc7627#section-4
-func extendedMasterFromPreMasterSecret(version uint16, suite *cipherSuite, preMasterSecret []byte, fh finishedHash) []byte {
-	sessionHash := fh.Sum()
-	masterSecret := make([]byte, masterSecretLength)
-	prfForVersion(version, suite)(masterSecret, preMasterSecret, extendedMasterSecretLabel, sessionHash)
-	return masterSecret
 }
 
 func BoringPaddingStyle(unpaddedLen int) int {

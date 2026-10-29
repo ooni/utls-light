@@ -14,6 +14,7 @@ import (
 	"crypto/rsa"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"hash"
 	"slices"
 	"time"
@@ -334,6 +335,11 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 		hello.keyShares = hello.keyShares[:1]
 	}
 
+	// <UTLS-LIGHT>
+	// Chrome's second ClientHello has no GREASE key share
+	hello.noGreaseKeyshare = true
+	// </UTLS-LIGHT>
+
 	if len(hello.pskIdentities) > 0 {
 		pskSuite := cipherSuiteTLS13ByID(hs.session.cipherSuite)
 		if pskSuite == nil {
@@ -619,6 +625,18 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 			return err
 		}
 	}
+
+	// <UTLS-LIGHT>
+	// readHandshake has added the compressed message to the transcript,
+	// as RFC 8879 says.
+	if compressedCertMsg, ok := msg.(*compressedCertificateMsg); ok {
+		msg, err = compressedCertMsg.decompressCert()
+		if err != nil {
+			c.sendAlert(alertBadCertificate)
+			return fmt.Errorf("tls: failed to decompress certificate message: %w", err)
+		}
+	}
+	// </UTLS-LIGHT>
 
 	certMsg, ok := msg.(*certificateMsgTLS13)
 	if !ok {

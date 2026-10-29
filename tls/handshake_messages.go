@@ -100,6 +100,11 @@ type clientHelloMsg struct {
 	encryptedClientHello             []byte
 	// extensions are only populated on the server-side of a handshake
 	extensions []uint16
+
+	// <UTLS-LIGHT>
+	// Used to signal the marshal function if we should disable greasing the keyshare field
+	noGreaseKeyshare bool
+	// </UTLS-LIGHT>
 }
 
 func (m *clientHelloMsg) marshalMsg(echInner bool) ([]byte, error) {
@@ -375,7 +380,15 @@ func (m *clientHelloMsg) marshalMsg(echInner bool) ([]byte, error) {
 }
 
 func (m *clientHelloMsg) marshal() ([]byte, error) {
-	return m.marshalMsg(false)
+	// <UTLS-LIGHT>
+	// Rewrite Go's ClientHello into Chrome's. The result depends only on
+	// Go's, so the transcript and the wire see the same bytes.
+	raw, err := m.marshalMsg(false)
+	if err != nil {
+		return nil, err
+	}
+	return transformClientHello(raw, m.noGreaseKeyshare), nil
+	// </UTLS-LIGHT>
 }
 
 // marshalWithoutBinders returns the ClientHello through the
