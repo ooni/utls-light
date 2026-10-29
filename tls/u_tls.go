@@ -3,8 +3,10 @@ package tls
 import (
 	"bytes"
 	"compress/zlib"
+	"crypto/sha256"
 	"fmt"
 	"io"
+	mathrand "math/rand/v2"
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
@@ -12,10 +14,7 @@ import (
 )
 
 const (
-	extensionPadding             uint16 = 21
-	extensionEMS                 uint16 = 23
 	extensionCompressCertificate uint16 = 27
-	extensionApplicationSetting  uint16 = 0x4469
 )
 
 const (
@@ -41,9 +40,9 @@ type compressedCertificateMsg struct {
 	compressedCertificateMessage []byte
 }
 
-func (m *compressedCertificateMsg) marshal() []byte {
+func (m *compressedCertificateMsg) marshal() ([]byte, error) {
 	if m.raw != nil {
-		return m.raw
+		return m.raw, nil
 	}
 
 	var b cryptobyte.Builder
@@ -56,8 +55,9 @@ func (m *compressedCertificateMsg) marshal() []byte {
 		})
 	})
 
-	m.raw = b.BytesOrPanic()
-	return m.raw
+	var err error
+	m.raw, err = b.Bytes()
+	return m.raw, err
 }
 
 func (m *compressedCertificateMsg) decompressCert() (*certificateMsgTLS13, error) {
@@ -129,39 +129,96 @@ func (m *compressedCertificateMsg) unmarshal(data []byte) bool {
 	return true
 }
 
-// Taken from refraction-networking/utls
-var extendedMasterSecretLabel = []byte("extended master secret")
-
-// extendedMasterFromPreMasterSecret generates the master secret from the pre-master
-// secret and session hash. See https://tools.ietf.org/html/rfc7627#section-4
-func extendedMasterFromPreMasterSecret(version uint16, suite *cipherSuite, preMasterSecret []byte, fh finishedHash) []byte {
-	sessionHash := fh.Sum()
-	masterSecret := make([]byte, masterSecretLength)
-	prfForVersion(version, suite)(masterSecret, preMasterSecret, extendedMasterSecretLabel, sessionHash)
-	return masterSecret
+// Chrome's cipher suites and signature schemes, in its order and without
+// GREASE. The client accepts what the server picks from these.
+var chromeCipherSuites = []uint16{
+	TLS_AES_128_GCM_SHA256,
+	TLS_AES_256_GCM_SHA384,
+	TLS_CHACHA20_POLY1305_SHA256,
+	TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+	TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+	TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+	TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+	TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+	TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+	TLS_RSA_WITH_AES_128_GCM_SHA256,
+	TLS_RSA_WITH_AES_256_GCM_SHA384,
+	TLS_RSA_WITH_AES_128_CBC_SHA,
+	TLS_RSA_WITH_AES_256_CBC_SHA,
 }
 
-func BoringPaddingStyle(unpaddedLen int) int {
-	if unpaddedLen > 0xff && unpaddedLen < 0x200 {
-		paddingLen := 0x200 - unpaddedLen
-		if paddingLen >= 4+1 {
-			paddingLen -= 4
-		} else {
-			paddingLen = 1
-		}
-		return paddingLen
-	}
-	return 0
+var chromeSignatureAlgorithms = []SignatureScheme{
+	MLDSA44,
+	MLDSA65,
+	MLDSA87,
+	ECDSAWithP256AndSHA256,
+	PSSWithSHA256,
+	PKCS1WithSHA256,
+	ECDSAWithP384AndSHA384,
+	PSSWithSHA384,
+	PKCS1WithSHA384,
+	PSSWithSHA512,
+	PKCS1WithSHA512,
 }
 
+// chromeSupportedGroups are Chrome's, after GREASE. Go's key shares, which
+// the rewrite keeps, are X25519MLKEM768 and X25519, in that order.
+var chromeSupportedGroups = []CurveID{X25519MLKEM768, X25519, CurveP256, CurveP384}
+
+// chromeTrustAnchorIDs are the trust anchor IDs (draft-ietf-tls-trust-anchor-ids)
+// Chrome 155 and 156 send, in their order, from Chrome's root store.
+var chromeTrustAnchorIDs = [][]byte{
+	{0x82, 0xdf, 0x13, 0x02, 0x01},
+	{0x82, 0xdf, 0x13, 0x02, 0x06},
+	{0x82, 0xdf, 0x13, 0x02, 0x0d},
+	{0x82, 0xdf, 0x13, 0x02, 0x0e},
+	{0x82, 0xdf, 0x13, 0x02, 0x0f},
+	{0x82, 0xdf, 0x13, 0x02, 0x12},
+	{0x82, 0xdf, 0x13, 0x02, 0x13},
+	{0x82, 0xdf, 0x13, 0x02, 0x14},
+	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x07},
+	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x08},
+	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x09},
+	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0a},
+	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0b},
+	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0c},
+	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0d},
+	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x12},
+	{0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x13},
+	{0xd6, 0x79, 0x09, 0x01},
+	{0xd6, 0x79, 0x09, 0x04},
+	{0xd6, 0x79, 0x09, 0x05},
+	{0xd6, 0x79, 0x09, 0x06},
+	{0xd6, 0x79, 0x09, 0x07},
+	{0xd6, 0x79, 0x09, 0x08},
+	{0xd6, 0x79, 0x09, 0x0a},
+	{0xd6, 0x79, 0x09, 0x0b},
+	{0xd6, 0x79, 0x09, 0x0c},
+	{0xd6, 0x79, 0x09, 0x0d},
+	{0xd6, 0x79, 0x09, 0x0f},
+}
+
+const (
+	extensionTrustAnchors        uint16 = 0xca34
+	extensionApplicationSettings uint16 = 17613 // ALPS, Chrome's new codepoint
+)
+
+// GREASE indices, as BoringSSL's ssl_grease_index_t
 const (
 	ssl_grease_cipher = iota
 	ssl_grease_group
 	ssl_grease_extension1
 	ssl_grease_extension2
 	ssl_grease_version
+	ssl_grease_ticket_extension
+	ssl_grease_ech_config_id
+	ssl_grease_sigalg
 )
 
+// BoringGrease returns the GREASE value BoringSSL would use at index,
+// seeded with the ClientHello's random.
 func BoringGrease(clientRandom []byte, index int) uint16 {
 	var ret uint16
 	ret = uint16(clientRandom[index])
@@ -176,6 +233,29 @@ func BoringGrease(clientRandom []byte, index int) uint16 {
 	return ret
 }
 
+// helloRand returns a generator seeded with the ClientHello's random, so
+// that marshalling the same ClientHello twice gives the same bytes.
+func helloRand(clientRandom []byte) *mathrand.Rand {
+	seed := sha256.Sum256(append([]byte("utls-light chrome"), clientRandom...))
+	return mathrand.New(mathrand.NewChaCha8(seed))
+}
+
+// helloExtension is one ClientHello extension, as on the wire.
+type helloExtension struct {
+	typ  uint16
+	data []byte
+}
+
+func buildBytes(fn func(b *cryptobyte.Builder)) []byte {
+	var b cryptobyte.Builder
+	fn(&b)
+	return b.BytesOrPanic()
+}
+
+// transformClientHello rewrites the ClientHello Go marshalled into the one
+// Chrome 156 sends: its cipher suites, extensions and GREASE, in Chrome's
+// shuffled order. It keeps Go's random, session ID, SNI, ALPN, key shares,
+// renegotiation info, session ticket, cookie and pre-shared key.
 func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 	vers := uint16(0)
 	random := make([]byte, 32)
@@ -202,35 +282,25 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 		panic("no extension data present, panic early")
 	}
 
-	// We need to parse the SNI field so we can re-use it in our own byte stream
 	var extensions cryptobyte.String
 	if !s.ReadUint16LengthPrefixed(&extensions) || !s.Empty() {
 		panic("failed to parse extensions")
 	}
 
-	var secureRenegotiationData []byte
-	var sniExtensionData []byte
-	var sessionTicketData []byte
-	var alpnData []byte
+	// The extensions whose contents we keep from Go's ClientHello
+	kept := map[uint16][]byte{}
 	var keyShares []keyShare
-	var cookieData []byte
 	for !extensions.Empty() {
 		var extension uint16
 		var extData cryptobyte.String
 		if !extensions.ReadUint16(&extension) || !extensions.ReadUint16LengthPrefixed(&extData) {
 			panic("failed to parse extension type")
 		}
-		if extension == extensionServerName {
-			sniExtensionData = []byte(extData)
-		} else if extension == extensionRenegotiationInfo {
-			secureRenegotiationData = []byte(extData)
-		} else if extension == extensionSessionTicket {
-			sessionTicketData = []byte(extData)
-		} else if extension == extensionALPN {
-			alpnData = []byte(extData)
-		} else if extension == extensionCookie {
-			cookieData = []byte(extData)
-		} else if extension == extensionKeyShare {
+		switch extension {
+		case extensionServerName, extensionRenegotiationInfo, extensionSessionTicket,
+			extensionALPN, extensionCookie, extensionPreSharedKey, extensionEarlyData:
+			kept[extension] = []byte(extData)
+		case extensionKeyShare:
 			var clientShares cryptobyte.String
 			if !extData.ReadUint16LengthPrefixed(&clientShares) {
 				panic("failed to read keyshare information")
@@ -244,200 +314,221 @@ func transformClientHello(mRaw []byte, noGreaseKeyshare bool) []byte {
 				}
 				keyShares = append(keyShares, ks)
 			}
-
 		}
 	}
 
-	// Pack all the goodies we extracted from the original ClientHello and
-	// pack them up into a fresh new ClientHello byte array
-	CIPHER_SUITES_UTLS_LITE := []uint16{
-		BoringGrease(random, ssl_grease_cipher),
-		TLS_AES_128_GCM_SHA256,
-		TLS_AES_256_GCM_SHA384,
-		TLS_CHACHA20_POLY1305_SHA256,
-		TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-		TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-		TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-		TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-		TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-		TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-		TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-		TLS_RSA_WITH_AES_128_GCM_SHA256,
-		TLS_RSA_WITH_AES_256_GCM_SHA384,
-		TLS_RSA_WITH_AES_128_CBC_SHA,
-		TLS_RSA_WITH_AES_256_CBC_SHA,
+	rnd := helloRand(random)
+	var exts []helloExtension
+	add := func(typ uint16, fn func(b *cryptobyte.Builder)) {
+		exts = append(exts, helloExtension{typ, buildBytes(fn)})
 	}
-	SIGNATURE_ALGORITHMS_UTLS_LITE := []uint16{
-		uint16(ECDSAWithP256AndSHA256),
-		uint16(PSSWithSHA256),
-		uint16(PKCS1WithSHA256),
-		uint16(ECDSAWithP384AndSHA384),
-		uint16(PSSWithSHA384),
-		uint16(PKCS1WithSHA384),
-		uint16(PSSWithSHA512),
-		uint16(PKCS1WithSHA512),
+	addKept := func(typ uint16) {
+		if data, ok := kept[typ]; ok {
+			exts = append(exts, helloExtension{typ, data})
+		}
 	}
-	var b cryptobyte.Builder
-	b.AddUint8(typeClientHello)
-	b.AddUint24LengthPrefixed(func(header *cryptobyte.Builder) {
-		header.AddUint16(vers)
-		addBytesWithLength(header, random, 32)
-		header.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(sessionId)
-		})
-		header.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-			for _, suite := range CIPHER_SUITES_UTLS_LITE {
-				b.AddUint16(suite)
+
+	addKept(extensionServerName)
+	add(extensionExtendedMasterSecret, func(b *cryptobyte.Builder) {})
+	add(extensionRenegotiationInfo, func(b *cryptobyte.Builder) {
+		if data, ok := kept[extensionRenegotiationInfo]; ok {
+			b.AddBytes(data)
+		} else {
+			b.AddUint8(0) // empty renegotiated_connection
+		}
+	})
+	add(extensionSupportedCurves, func(b *cryptobyte.Builder) {
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint16(BoringGrease(random, ssl_grease_group))
+			for _, group := range chromeSupportedGroups {
+				b.AddUint16(uint16(group))
 			}
-		})
-		header.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes([]uint8{compressionNone})
-		})
-
-		header.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddUint16(BoringGrease(random, ssl_grease_extension1))
-			b.AddUint16(0x0000)
-
-			if len(sniExtensionData) > 0 {
-				b.AddUint16(extensionServerName)
-				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddBytes(sniExtensionData)
-				})
-			}
-
-			b.AddUint16(extensionEMS)
-			b.AddUint16(0x0000)
-
-			b.AddUint16(extensionRenegotiationInfo)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddBytes(secureRenegotiationData)
-			})
-
-			b.AddUint16(extensionSupportedCurves)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint16(uint16(BoringGrease(random, ssl_grease_group)))
-					b.AddUint16(uint16(X25519))
-					b.AddUint16(uint16(CurveP256))
-					b.AddUint16(uint16(CurveP384))
-				})
-			})
-
-			b.AddUint16(extensionSupportedPoints)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint8(pointFormatUncompressed)
-				})
-			})
-
-			b.AddUint16(extensionSessionTicket)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddBytes(sessionTicketData)
-			})
-
-			if len(alpnData) > 0 {
-				b.AddUint16(extensionALPN)
-				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddBytes(alpnData)
-				})
-			}
-
-			b.AddUint16(extensionStatusRequest)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddUint8(1)  // status_type = ocsp
-				b.AddUint16(0) // empty responder_id_list
-				b.AddUint16(0) // empty request_extensions
-			})
-
-			b.AddUint16(extensionSignatureAlgorithms)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					for _, sigAlgo := range SIGNATURE_ALGORITHMS_UTLS_LITE {
-						b.AddUint16(uint16(sigAlgo))
-					}
-				})
-			})
-
-			b.AddUint16(extensionSCT)
-			b.AddUint16(0) // empty extension_data
-
-			b.AddUint16(extensionKeyShare)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					if !noGreaseKeyshare {
-						b.AddUint16(BoringGrease(random, ssl_grease_group))
-						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-							b.AddUint8(0)
-						})
-					}
-					for _, ks := range keyShares {
-						b.AddUint16(uint16(ks.group))
-						b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-							b.AddBytes(ks.data)
-						})
-					}
-				})
-			})
-
-			b.AddUint16(extensionPSKModes)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint8(1) // psk_dhe_ke
-				})
-			})
-
-			b.AddUint16(extensionSupportedVersions)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint16(BoringGrease(random, ssl_grease_version))
-					b.AddUint16(VersionTLS13)
-					b.AddUint16(VersionTLS12)
-				})
-			})
-
-			if len(cookieData) > 0 {
-				// RFC 8446, Section 4.2.2
-				b.AddUint16(extensionCookie)
-				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddBytes(cookieData)
-				})
-			}
-
-			b.AddUint16(extensionCompressCertificate)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint16(0x0002) // brotli
-				})
-			})
-
-			// This is disabled, because we don't support it, but nor does utls proper
-			/*
-
-				b.AddUint16(extensionApplicationSetting)
-				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-							b.AddBytes([]byte("h2"))
-						})
-					})
-				})
-			*/
-
-			b.AddUint16(BoringGrease(random, ssl_grease_extension2))
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddUint8(0)
-			})
-
-			chLen := len(header.BytesOrPanic()) + len(b.BytesOrPanic()) - 1
-			paddingLen := BoringPaddingStyle(chLen)
-			padding := make([]byte, paddingLen)
-			b.AddUint16(extensionPadding)
-			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-				b.AddBytes(padding)
-			})
-
 		})
 	})
-	return b.BytesOrPanic()
+	add(extensionSupportedPoints, func(b *cryptobyte.Builder) {
+		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint8(pointFormatUncompressed)
+		})
+	})
+	add(extensionSessionTicket, func(b *cryptobyte.Builder) {
+		b.AddBytes(kept[extensionSessionTicket])
+	})
+	addKept(extensionALPN)
+	add(extensionStatusRequest, func(b *cryptobyte.Builder) {
+		b.AddUint8(1)  // status_type = ocsp
+		b.AddUint16(0) // empty responder_id_list
+		b.AddUint16(0) // empty request_extensions
+	})
+	add(extensionSignatureAlgorithms, func(b *cryptobyte.Builder) {
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint16(BoringGrease(random, ssl_grease_sigalg))
+			for _, sigAlgo := range chromeSignatureAlgorithms {
+				b.AddUint16(uint16(sigAlgo))
+			}
+		})
+	})
+	add(extensionSCT, func(b *cryptobyte.Builder) {})
+	add(extensionKeyShare, func(b *cryptobyte.Builder) {
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			if !noGreaseKeyshare {
+				b.AddUint16(BoringGrease(random, ssl_grease_group))
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddUint8(0)
+				})
+			}
+			for _, ks := range keyShares {
+				b.AddUint16(uint16(ks.group))
+				b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddBytes(ks.data)
+				})
+			}
+		})
+	})
+	add(extensionPSKModes, func(b *cryptobyte.Builder) {
+		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint8(pskModeDHE)
+		})
+	})
+	add(extensionSupportedVersions, func(b *cryptobyte.Builder) {
+		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint16(BoringGrease(random, ssl_grease_version))
+			b.AddUint16(VersionTLS13)
+			b.AddUint16(VersionTLS12)
+		})
+	})
+	addKept(extensionCookie)
+	addKept(extensionEarlyData)
+	add(extensionCompressCertificate, func(b *cryptobyte.Builder) {
+		b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint16(certCompressionBrotli)
+		})
+	})
+	if offersH2(kept[extensionALPN]) {
+		add(extensionApplicationSettings, func(b *cryptobyte.Builder) {
+			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+				b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddBytes([]byte("h2"))
+				})
+			})
+		})
+	}
+	add(extensionTrustAnchors, func(b *cryptobyte.Builder) {
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			for _, id := range chromeTrustAnchorIDs {
+				b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+					b.AddBytes(id)
+				})
+			}
+		})
+	})
+	add(extensionEncryptedClientHello, func(b *cryptobyte.Builder) {
+		greaseECH(b, rnd)
+	})
+
+	// Chrome shuffles every extension but GREASE and pre_shared_key
+	rnd.Shuffle(len(exts), func(i, j int) { exts[i], exts[j] = exts[j], exts[i] })
+	exts = append([]helloExtension{{BoringGrease(random, ssl_grease_extension1), nil}}, exts...)
+	exts = append(exts, helloExtension{BoringGrease(random, ssl_grease_extension2), []byte{0}})
+	if data, ok := kept[extensionPreSharedKey]; ok {
+		exts = append(exts, helloExtension{extensionPreSharedKey, data})
+	}
+
+	return buildBytes(func(b *cryptobyte.Builder) {
+		b.AddUint8(typeClientHello)
+		b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint16(vers)
+			addBytesWithLength(b, random, 32)
+			b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+				b.AddBytes(sessionId)
+			})
+			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+				b.AddUint16(BoringGrease(random, ssl_grease_cipher))
+				for _, suite := range chromeCipherSuites {
+					b.AddUint16(suite)
+				}
+			})
+			b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+				b.AddUint8(compressionNone)
+			})
+			b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+				for _, ext := range exts {
+					b.AddUint16(ext.typ)
+					b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+						b.AddBytes(ext.data)
+					})
+				}
+			})
+		})
+	})
+}
+
+// offersH2 tells whether an ALPN extension's data lists h2.
+func offersH2(alpn []byte) bool {
+	s := cryptobyte.String(alpn)
+	var list cryptobyte.String
+	if !s.ReadUint16LengthPrefixed(&list) {
+		return false
+	}
+	for !list.Empty() {
+		var proto cryptobyte.String
+		if !list.ReadUint8LengthPrefixed(&proto) {
+			return false
+		}
+		if string(proto) == "h2" {
+			return true
+		}
+	}
+	return false
+}
+
+// greaseECH writes BoringSSL's GREASE encrypted_client_hello: an outer
+// ECH with HKDF-SHA256 and AES-128-GCM, a random config ID and X25519 key,
+// and a random payload of 144, 176, 208 or 240 bytes.
+func greaseECH(b *cryptobyte.Builder, rnd *mathrand.Rand) {
+	fill := func(n int) []byte {
+		buf := make([]byte, n)
+		for i := range buf {
+			buf[i] = byte(rnd.Uint32())
+		}
+		return buf
+	}
+	b.AddUint8(0)       // outer
+	b.AddUint16(0x0001) // HKDF-SHA256
+	b.AddUint16(0x0001) // AES-128-GCM
+	b.AddUint8(byte(rnd.Uint32()))
+	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddBytes(fill(32))
+	})
+	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddBytes(fill(128 + 32*rnd.IntN(4) + 16))
+	})
+}
+
+// clientEncryptedExtensionsMsg is the client's EncryptedExtensions, which
+// carries its ALPS settings (draft-vvv-tls-alps). Like Chrome without
+// custom settings, we send none.
+type clientEncryptedExtensionsMsg struct {
+	raw []byte
+}
+
+func (m *clientEncryptedExtensionsMsg) marshal() ([]byte, error) {
+	if m.raw != nil {
+		return m.raw, nil
+	}
+	var b cryptobyte.Builder
+	b.AddUint8(typeEncryptedExtensions)
+	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddUint16(extensionApplicationSettings)
+			b.AddUint16(0) // empty settings
+		})
+	})
+	var err error
+	m.raw, err = b.Bytes()
+	return m.raw, err
+}
+
+func (m *clientEncryptedExtensionsMsg) unmarshal(data []byte) bool {
+	m.raw = data
+	return true
 }

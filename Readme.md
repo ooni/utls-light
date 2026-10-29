@@ -5,6 +5,12 @@ This is a light version of
 with a focus on parrotting a single browser and hence implementing only the
 strict minimal set of features needed for that.
 
+It is `crypto/tls` from Go 1.27.3, with every change marked `<UTLS-LIGHT>`,
+whose ClientHello is rewritten into Chrome 156's (Chrome 155 sends the same
+one): ML-KEM, ML-DSA, trust anchor IDs, ALPS, GREASE (ECH included) and the
+extension shuffle. `tls/u_tls_test.go` compares it with a capture of
+Chrome 155.
+
 Design goals:
 * Parroting the most popular browser out there (Google Chrome)
 * Smallest number of changes to the go/tls codepath

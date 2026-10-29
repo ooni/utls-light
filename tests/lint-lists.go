@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/net/http2"
 
-	tls "github.com/hellais/utls-light/tls"
+	tls "github.com/ooni/utls-light/tls"
 )
 
 func getRequest(conn net.Conn, requestHostname string, alpn string) (*http.Response, error) {
