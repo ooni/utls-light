@@ -10,7 +10,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
-	"crypto/internal/boring"
+	"github.com/ooni/utls-light/tls/internal/boring"
 	"crypto/mldsa"
 	"crypto/rsa"
 	"crypto/x509"

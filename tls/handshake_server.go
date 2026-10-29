@@ -12,7 +12,7 @@ import (
 	"crypto/mldsa"
 	"crypto/rsa"
 	"crypto/subtle"
-	"crypto/tls/internal/fips140tls"
+	"github.com/ooni/utls-light/tls/internal/fips140tls"
 	"crypto/x509"
 	"errors"
 	"fmt"

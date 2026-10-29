@@ -7,7 +7,7 @@ package tls
 import (
 	"crypto"
 	"crypto/hmac"
-	"crypto/internal/fips140/tls12"
+	"github.com/ooni/utls-light/tls/internal/tls12"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"

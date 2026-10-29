@@ -10,16 +10,14 @@ import (
 	"crypto/cipher"
 	"crypto/des"
 	"crypto/hmac"
-	"crypto/internal/boring"
-	fipsaes "crypto/internal/fips140/aes"
-	"crypto/internal/fips140/aes/gcm"
+	"github.com/ooni/utls-light/tls/internal/boring"
 	"crypto/rc4"
 	"crypto/sha1"
 	"crypto/sha256"
 	_ "crypto/sha512" // for crypto.SHA384
 	"fmt"
 	"hash"
-	"internal/cpu"
+	"golang.org/x/sys/cpu"
 	"runtime"
 	_ "unsafe" // for linkname
 
@@ -519,7 +517,10 @@ func aeadAESGCM(key, noncePrefix []byte) aead {
 		aead, err = boring.NewGCMTLS(aes)
 	} else {
 		boring.Unreachable()
-		aead, err = gcm.NewGCMForTLS12(aes.(*fipsaes.Block))
+		// <UTLS-LIGHT>
+		// crypto/internal/fips140/aes/gcm is internal to the standard library
+		aead, err = cipher.NewGCM(aes)
+		// </UTLS-LIGHT>
 	}
 	if err != nil {
 		panic(err)
@@ -553,7 +554,10 @@ func aeadAESGCMTLS13(key, nonceMask []byte) aead {
 		aead, err = boring.NewGCMTLS13(aes)
 	} else {
 		boring.Unreachable()
-		aead, err = gcm.NewGCMForTLS13(aes.(*fipsaes.Block))
+		// <UTLS-LIGHT>
+		// crypto/internal/fips140/aes/gcm is internal to the standard library
+		aead, err = cipher.NewGCM(aes)
+		// </UTLS-LIGHT>
 	}
 	if err != nil {
 		panic(err)

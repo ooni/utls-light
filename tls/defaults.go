@@ -5,7 +5,7 @@
 package tls
 
 import (
-	"internal/godebug"
+	"github.com/ooni/utls-light/tls/internal/godebug"
 	"slices"
 	_ "unsafe" // for linkname
 )

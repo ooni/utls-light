@@ -1,15 +1,11 @@
-module github.com/hellais/utls-light
+module github.com/ooni/utls-light
 
-go 1.18
-
-require (
-	github.com/andybalholm/brotli v1.0.4
-	github.com/klauspost/compress v1.15.9
-	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90
-	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
-)
+go 1.27
 
 require (
-	golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1 // indirect
-	golang.org/x/text v0.3.6 // indirect
+	golang.org/x/crypto v0.58.0
+	golang.org/x/net v0.61.0
+	golang.org/x/sys v0.49.0
 )
+
+require golang.org/x/text v0.43.0 // indirect

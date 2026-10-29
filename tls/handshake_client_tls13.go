@@ -10,7 +10,7 @@ import (
 	"crypto"
 	"crypto/hkdf"
 	"crypto/hmac"
-	"crypto/internal/fips140/tls13"
+	"github.com/ooni/utls-light/tls/internal/tls13"
 	"crypto/rsa"
 	"crypto/subtle"
 	"errors"
