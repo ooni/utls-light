@@ -6,6 +6,18 @@ package tls
 
 import "strconv"
 
+// An AlertError is a TLS alert.
+//
+// When using a QUIC transport, QUICConn methods will return an error
+// which wraps AlertError rather than sending a TLS alert.
+type AlertError uint8
+
+var _ error = AlertError(0)
+
+func (e AlertError) Error() string {
+	return alert(e).String()
+}
+
 type alert uint8
 
 const (
@@ -48,6 +60,7 @@ const (
 	alertUnknownPSKIdentity           alert = 115
 	alertCertificateRequired          alert = 116
 	alertNoApplicationProtocol        alert = 120
+	alertECHRequired                  alert = 121
 )
 
 var alertText = map[alert]string{
@@ -84,6 +97,7 @@ var alertText = map[alert]string{
 	alertUnknownPSKIdentity:           "unknown PSK identity",
 	alertCertificateRequired:          "certificate required",
 	alertNoApplicationProtocol:        "no application protocol",
+	alertECHRequired:                  "encrypted client hello required",
 }
 
 func (e alert) String() string {
