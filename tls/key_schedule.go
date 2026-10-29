@@ -9,9 +9,9 @@ import (
 	"crypto/ecdh"
 	"crypto/fips140"
 	"crypto/hmac"
-	"github.com/ooni/utls-light/tls/internal/tls13"
 	"crypto/mlkem"
 	"errors"
+	"github.com/ooni/utls-light/tls/internal/tls13"
 	"hash"
 	"io"
 )

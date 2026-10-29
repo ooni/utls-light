@@ -10,14 +10,14 @@ import (
 	"crypto/cipher"
 	"crypto/des"
 	"crypto/hmac"
-	"github.com/ooni/utls-light/tls/internal/boring"
 	"crypto/rc4"
 	"crypto/sha1"
 	"crypto/sha256"
 	_ "crypto/sha512" // for crypto.SHA384
 	"fmt"
-	"hash"
+	"github.com/ooni/utls-light/tls/internal/boring"
 	"golang.org/x/sys/cpu"
+	"hash"
 	"runtime"
 	_ "unsafe" // for linkname
 

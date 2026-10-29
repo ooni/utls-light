@@ -11,16 +11,16 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/hpke"
-	"github.com/ooni/utls-light/tls/internal/tls13"
 	"crypto/mldsa"
 	"crypto/rsa"
 	"crypto/subtle"
-	"github.com/ooni/utls-light/tls/internal/fips140tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"hash"
+	"github.com/ooni/utls-light/tls/internal/fips140tls"
 	"github.com/ooni/utls-light/tls/internal/godebug"
+	"github.com/ooni/utls-light/tls/internal/tls13"
+	"hash"
 	"io"
 	"net"
 	"slices"
@@ -138,6 +138,13 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, *keySharePrivateKeys, *echCli
 		} else {
 			hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13NoAES...)
 		}
+
+		// <UTLS-LIGHT>
+		// The rewritten ClientHello offers Chrome's lists: accept what the
+		// server picks from them.
+		hello.cipherSuites = chromeCipherSuites
+		hello.supportedSignatureAlgorithms = chromeSignatureAlgorithms
+		// </UTLS-LIGHT>
 
 		if len(hello.supportedCurves) == 0 {
 			return nil, nil, nil, errors.New("tls: no supported key exchange methods (CurveIDs)")

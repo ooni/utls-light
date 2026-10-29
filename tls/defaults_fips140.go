@@ -10,10 +10,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
-	"github.com/ooni/utls-light/tls/internal/boring"
 	"crypto/mldsa"
 	"crypto/rsa"
 	"crypto/x509"
+	"github.com/ooni/utls-light/tls/internal/boring"
 )
 
 // These FIPS 140-3 policies allow anything approved by SP 800-140C

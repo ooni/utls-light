@@ -1021,6 +1021,11 @@ type encryptedExtensionsMsg struct {
 	earlyData               bool
 	echRetryConfigs         []byte
 	serverNameAck           bool
+
+	// <UTLS-LIGHT>
+	// The server accepted ALPS: we must send our settings
+	applicationSettings bool
+	// </UTLS-LIGHT>
 }
 
 func (m *encryptedExtensionsMsg) marshal() ([]byte, error) {
@@ -1120,6 +1125,12 @@ func (m *encryptedExtensionsMsg) unmarshal(data []byte) bool {
 				return false
 			}
 			m.serverNameAck = true
+		// <UTLS-LIGHT>
+		case extensionApplicationSettings:
+			// the server's settings are for its HTTP/2 stack, not ours
+			m.applicationSettings = true
+			continue
+		// </UTLS-LIGHT>
 		default:
 			// Ignore unknown extensions.
 			continue

@@ -10,11 +10,11 @@ import (
 	"crypto"
 	"crypto/hkdf"
 	"crypto/hmac"
-	"github.com/ooni/utls-light/tls/internal/tls13"
 	"crypto/rsa"
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"github.com/ooni/utls-light/tls/internal/tls13"
 	"hash"
 	"slices"
 	"time"
@@ -40,6 +40,11 @@ type clientHandshakeStateTLS13 struct {
 	trafficSecret []byte // client_application_traffic_secret_0
 
 	echContext *echClientContext
+
+	// <UTLS-LIGHT>
+	// The server accepted ALPS
+	alps bool
+	// </UTLS-LIGHT>
 }
 
 // handshake requires hs.c, hs.hello, hs.serverHello, hs.keyShareKeys, and,
@@ -141,6 +146,16 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	if err := hs.readServerFinished(); err != nil {
 		return err
 	}
+
+	// <UTLS-LIGHT>
+	// Our half of ALPS, before our certificate and Finished
+	if hs.alps {
+		if _, err := c.writeHandshakeRecord(&clientEncryptedExtensionsMsg{}, hs.transcript); err != nil {
+			return err
+		}
+	}
+	// </UTLS-LIGHT>
+
 	if err := hs.sendClientCertificate(); err != nil {
 		return err
 	}
@@ -549,6 +564,10 @@ func (hs *clientHandshakeStateTLS13) readServerParameters() error {
 		return err
 	}
 	c.clientProtocol = encryptedExtensions.alpnProtocol
+
+	// <UTLS-LIGHT>
+	hs.alps = encryptedExtensions.applicationSettings
+	// </UTLS-LIGHT>
 
 	if c.quic != nil {
 		if encryptedExtensions.quicTransportParameters == nil {
